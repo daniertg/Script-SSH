@@ -146,6 +146,19 @@ EOF
     read -n 1 -s -r -p "Tekan sembarang tombol untuk melanjutkan..."
 }
 
+# Fungsi untuk mendapatkan IP publik
+get_public_ip() {
+    # Coba beberapa layanan untuk mendapatkan IP publik
+    PUBLIC_IP=$(curl -s https://api.ipify.org || curl -s https://ipinfo.io/ip || curl -s https://ifconfig.me)
+    
+    # Jika gagal mendapatkan IP publik, gunakan IP lokal
+    if [[ -z "$PUBLIC_IP" ]]; then
+        PUBLIC_IP=$(ip addr show | grep -E "inet.*brd" | head -n1 | awk '{print $2}' | cut -d '/' -f1)
+    fi
+    
+    echo "$PUBLIC_IP"
+}
+
 # Fungsi Menu Utama
 show_main_menu() {
     clear
@@ -204,7 +217,7 @@ create_user() {
     success "User SSH $SSH_USER berhasil dibuat"
     
     # Tampilkan informasi koneksi
-    IP_ADDRESS=$(ip addr show | grep -E "inet.*brd" | head -n1 | awk '{print $2}' | cut -d '/' -f1)
+    IP_ADDRESS=$(get_public_ip)
     SSH_PORT=$(grep -E "^Port " /etc/ssh/sshd_config | awk '{print $2}')
     if [[ -z "$SSH_PORT" ]]; then
         SSH_PORT=22
@@ -280,7 +293,7 @@ create_websocket_user() {
     success "User WebSocket $WS_USER berhasil dibuat"
     
     # Tampilkan informasi koneksi
-    IP_ADDRESS=$(ip addr show | grep -E "inet.*brd" | head -n1 | awk '{print $2}' | cut -d '/' -f1)
+    IP_ADDRESS=$(get_public_ip)
     SSH_PORT=$(grep -E "^Port " /etc/ssh/sshd_config | awk '{print $2}')
     if [[ -z "$SSH_PORT" ]]; then
         SSH_PORT=22
