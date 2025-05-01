@@ -203,6 +203,29 @@ create_user() {
     echo "$SSH_USER:$SSH_PASSWORD" | chpasswd
     success "User SSH $SSH_USER berhasil dibuat"
     
+    # Tampilkan informasi koneksi
+    IP_ADDRESS=$(ip addr show | grep -E "inet.*brd" | head -n1 | awk '{print $2}' | cut -d '/' -f1)
+    SSH_PORT=$(grep -E "^Port " /etc/ssh/sshd_config | awk '{print $2}')
+    if [[ -z "$SSH_PORT" ]]; then
+        SSH_PORT=22
+    fi
+    
+    echo -e "${GREEN}════════════════════════════════════════════════════════════${PLAIN}"
+    echo -e "${GREEN}           INFORMASI KONEKSI USER SSH BARU                  ${PLAIN}"
+    echo -e "${GREEN}════════════════════════════════════════════════════════════${PLAIN}"
+    echo -e "${YELLOW}Detail Akun:${PLAIN}"
+    echo -e "Username    : ${GREEN}$SSH_USER${PLAIN}"
+    echo -e "Password    : ${GREEN}$SSH_PASSWORD${PLAIN}"
+    echo -e "IP Address  : ${GREEN}$IP_ADDRESS${PLAIN}"
+    echo -e "Port SSH    : ${GREEN}$SSH_PORT${PLAIN}"
+    echo ""
+    echo -e "${YELLOW}Perintah Koneksi SSH:${PLAIN}"
+    echo -e "${GREEN}ssh $SSH_USER@$IP_ADDRESS -p $SSH_PORT${PLAIN}"
+    echo ""
+    echo -e "${YELLOW}Perintah Koneksi SOCKS5 Proxy:${PLAIN}"
+    echo -e "${GREEN}ssh -D 1080 $SSH_USER@$IP_ADDRESS -p $SSH_PORT${PLAIN}"
+    echo -e "${GREEN}════════════════════════════════════════════════════════════${PLAIN}"
+    
     # Tekan Enter untuk melanjutkan
     read -n 1 -s -r -p "Tekan sembarang tombol untuk melanjutkan..."
 }
@@ -305,7 +328,7 @@ while true; do
             while true; do
                 show_websocket_menu
                 case $websocket_option in
-                    1) create_user ;;
+                    1) create_websocket_user ;;
                     2) delete_user ;;
                     3) show_users ;;
                     4) restart_websocket ;;
