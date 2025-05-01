@@ -269,6 +269,54 @@ restart_ssh() {
     read -n 1 -s -r -p "Tekan sembarang tombol untuk melanjutkan..."
 }
 
+# Create WebSocket User Function
+create_websocket_user() {
+    read -p "Masukkan username untuk WebSocket: " WS_USER
+    read -s -p "Masukkan password untuk $WS_USER: " WS_PASSWORD
+    echo ""
+
+    useradd -m -s /bin/bash "$WS_USER" > /dev/null 2>&1
+    echo "$WS_USER:$WS_PASSWORD" | chpasswd
+    success "User WebSocket $WS_USER berhasil dibuat"
+    
+    # Tampilkan informasi koneksi
+    IP_ADDRESS=$(ip addr show | grep -E "inet.*brd" | head -n1 | awk '{print $2}' | cut -d '/' -f1)
+    SSH_PORT=$(grep -E "^Port " /etc/ssh/sshd_config | awk '{print $2}')
+    if [[ -z "$SSH_PORT" ]]; then
+        SSH_PORT=22
+    fi
+    
+    # Ambil port WebSocket dari file konfigurasi
+    WS_PORT=$(cat /etc/theoryma_ws_port 2>/dev/null)
+    if [[ -z "$WS_PORT" ]]; then
+        WS_PORT=80  # Default port jika file konfigurasi tidak ditemukan
+    fi
+    
+    echo -e "${GREEN}════════════════════════════════════════════════════════════${PLAIN}"
+    echo -e "${GREEN}         INFORMASI KONEKSI USER WEBSOCKET BARU              ${PLAIN}"
+    echo -e "${GREEN}════════════════════════════════════════════════════════════${PLAIN}"
+    echo -e "${YELLOW}Detail Akun:${PLAIN}"
+    echo -e "Username        : ${GREEN}$WS_USER${PLAIN}"
+    echo -e "Password        : ${GREEN}$WS_PASSWORD${PLAIN}"
+    echo -e "IP Address      : ${GREEN}$IP_ADDRESS${PLAIN}"
+    echo -e "Port SSH        : ${GREEN}$SSH_PORT${PLAIN}"
+    echo -e "Port WebSocket  : ${GREEN}$WS_PORT${PLAIN}"
+    echo ""
+    echo -e "${YELLOW}URL WebSocket:${PLAIN}"
+    echo -e "${GREEN}ws://$IP_ADDRESS:$WS_PORT${PLAIN}"
+    echo ""
+    echo -e "${YELLOW}Konfigurasi untuk Aplikasi SSH Client:${PLAIN}"
+    echo -e "Host           : ${GREEN}$IP_ADDRESS${PLAIN}"
+    echo -e "Port           : ${GREEN}$WS_PORT${PLAIN}"
+    echo -e "Username       : ${GREEN}$WS_USER${PLAIN}"
+    echo -e "Password       : ${GREEN}$WS_PASSWORD${PLAIN}"
+    echo -e "WebSocket Path : ${GREEN}/${PLAIN}"
+    echo -e "${GREEN}════════════════════════════════════════════════════════════${PLAIN}"
+    
+    # Tekan Enter untuk melanjutkan
+    read -n 1 -s -r -p "Tekan sembarang tombol untuk melanjutkan..."
+}
+
 # Restart WebSocket Function
 restart_websocket() {
     show_progress "Merestart service WebSocket"
