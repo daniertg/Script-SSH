@@ -84,6 +84,68 @@ install_ssh() {
     fi
 }
 
+# Fungsi untuk menginstal TLS SSH
+install_tls_ssh() {
+    show_progress "Menginstal TLS SSH pada port 443"
+    
+    # Instal stunnel4
+    apt-get install stunnel4 -y > /dev/null 2>&1
+    
+    # Cek apakah stunnel4 sudah terinstal
+    if [ ! -f /etc/stunnel/stunnel.conf ]; then
+        error "Gagal menginstal stunnel4"
+    fi
+    
+    # Buat sertifikat SSL untuk stunnel
+    show_progress "Membuat sertifikat SSL"
+    
+    # Dapatkan hostname/IP untuk sertifikat
+    PUBLIC_IP=$(get_public_ip)
+    HOSTNAME=$(hostname)
+    
+    # Buat direktori untuk sertifikat jika belum ada
+    mkdir -p /etc/stunnel/cert
+    
+    # Buat sertifikat self-signed
+    openssl req -new -newkey rsa:2048 -days 3650 -nodes -x509 \
+        -subj "/CN=$PUBLIC_IP" \
+        -keyout /etc/stunnel/cert/stunnel.key \
+        -out /etc/stunnel/cert/stunnel.crt > /dev/null 2>&1
+    
+    # Gabung key dan cert untuk stunnel
+    cat /etc/stunnel/cert/stunnel.key /etc/stunnel/cert/stunnel.crt > /etc/stunnel/cert/stunnel.pem
+    
+    # Konfigurasi stunnel untuk TLS SSH
+    cat > /etc/stunnel/stunnel.conf << EOF
+pid = /var/run/stunnel4/stunnel.pid
+cert = /etc/stunnel/cert/stunnel.pem
+client = no
+socket = l:TCP_NODELAY=1
+socket = r:TCP_NODELAY=1
+
+[ssh-tls]
+accept = 443
+connect = 127.0.0.1:22
+EOF
+    
+    # Aktifkan stunnel4
+    sed -i 's/ENABLED=0/ENABLED=1/g' /etc/default/stunnel4
+    
+    # Restart stunnel4
+    systemctl restart stunnel4 > /dev/null 2>&1
+    systemctl enable stunnel4 > /dev/null 2>&1
+    
+    # Buka port di firewall
+    if command -v ufw &> /dev/null; then
+        ufw allow 443/tcp > /dev/null 2>&1
+    fi
+    
+    success "TLS SSH berhasil diinstal dan dikonfigurasi pada port 443"
+    
+    # Simpan pengaturan
+    echo "443" > /etc/theoryma_tls_port
+}
+
 # Fungsi untuk menginstal WebSocket
 install_websocket() {
     show_progress "Menginstal paket yang diperlukan untuk WebSocket"
@@ -184,10 +246,11 @@ show_ssh_menu() {
     echo -e "${YELLOW}2.${PLAIN} Hapus User SSH"
     echo -e "${YELLOW}3.${PLAIN} Tampilkan Daftar User SSH"
     echo -e "${YELLOW}4.${PLAIN} Restart Service SSH"
-    echo -e "${YELLOW}5.${PLAIN} Kembali ke Menu Utama"
+    echo -e "${YELLOW}5.${PLAIN} Instal/Restart TLS SSH (Port 443)"
+    echo -e "${YELLOW}6.${PLAIN} Kembali ke Menu Utama"
     echo -e "${GREEN}════════════════════════════════════════════════════════════${PLAIN}"
     echo ""
-    read -p "Pilih opsi [1-5]: " ssh_option
+    read -p "Pilih opsi [1-6]: " ssh_option
 }
 
 # Fungsi Menu WebSocket
@@ -223,6 +286,12 @@ create_user() {
         SSH_PORT=22
     fi
     
+    # Cek apakah TLS SSH sudah diinstal
+    TLS_PORT=""
+    if [ -f /etc/stunnel/stunnel.conf ]; then
+        TLS_PORT=$(cat /etc/theoryma_tls_port 2>/dev/null || echo "443")
+    fi
+    
     echo -e "${GREEN}════════════════════════════════════════════════════════════${PLAIN}"
     echo -e "${GREEN}           INFORMASI KONEKSI USER SSH BARU                  ${PLAIN}"
     echo -e "${GREEN}════════════════════════════════════════════════════════════${PLAIN}"
@@ -231,9 +300,17 @@ create_user() {
     echo -e "Password    : ${GREEN}$SSH_PASSWORD${PLAIN}"
     echo -e "IP Address  : ${GREEN}$IP_ADDRESS${PLAIN}"
     echo -e "Port SSH    : ${GREEN}$SSH_PORT${PLAIN}"
+    if [[ ! -z "$TLS_PORT" ]]; then
+        echo -e "Port TLS    : ${GREEN}$TLS_PORT${PLAIN}"
+    fi
     echo ""
     echo -e "${YELLOW}Perintah Koneksi SSH:${PLAIN}"
     echo -e "${GREEN}ssh $SSH_USER@$IP_ADDRESS -p $SSH_PORT${PLAIN}"
+    echo ""
+    if [[ ! -z "$TLS_PORT" ]]; then
+        echo -e "${YELLOW}Perintah Koneksi SSH TLS:${PLAIN}"
+        echo -e "${GREEN}Gunakan klien SSH dengan dukungan TLS pada port $TLS_PORT${PLAIN}"
+    fi
     echo ""
     echo -e "${YELLOW}Perintah Koneksi SOCKS5 Proxy:${PLAIN}"
     echo -e "${GREEN}ssh -D 1080 $SSH_USER@$IP_ADDRESS -p $SSH_PORT${PLAIN}"
@@ -305,6 +382,12 @@ create_websocket_user() {
         WS_PORT=80  # Default port jika file konfigurasi tidak ditemukan
     fi
     
+    # Cek apakah TLS SSH sudah diinstal
+    TLS_PORT=""
+    if [ -f /etc/stunnel/stunnel.conf ]; then
+        TLS_PORT=$(cat /etc/theoryma_tls_port 2>/dev/null || echo "443")
+    fi
+    
     echo -e "${GREEN}════════════════════════════════════════════════════════════${PLAIN}"
     echo -e "${GREEN}         INFORMASI KONEKSI USER WEBSOCKET BARU              ${PLAIN}"
     echo -e "${GREEN}════════════════════════════════════════════════════════════${PLAIN}"
@@ -314,6 +397,9 @@ create_websocket_user() {
     echo -e "IP Address      : ${GREEN}$IP_ADDRESS${PLAIN}"
     echo -e "Port SSH        : ${GREEN}$SSH_PORT${PLAIN}"
     echo -e "Port WebSocket  : ${GREEN}$WS_PORT${PLAIN}"
+    if [[ ! -z "$TLS_PORT" ]]; then
+        echo -e "Port TLS SSH   : ${GREEN}$TLS_PORT${PLAIN}"
+    fi
     echo ""
     echo -e "${YELLOW}URL WebSocket:${PLAIN}"
     echo -e "${GREEN}ws://$IP_ADDRESS:$WS_PORT${PLAIN}"
@@ -324,6 +410,14 @@ create_websocket_user() {
     echo -e "Username       : ${GREEN}$WS_USER${PLAIN}"
     echo -e "Password       : ${GREEN}$WS_PASSWORD${PLAIN}"
     echo -e "WebSocket Path : ${GREEN}/${PLAIN}"
+    if [[ ! -z "$TLS_PORT" ]]; then
+        echo -e ""
+        echo -e "${YELLOW}Untuk koneksi TLS SSH:${PLAIN}"
+        echo -e "Host          : ${GREEN}$IP_ADDRESS${PLAIN}"
+        echo -e "Port          : ${GREEN}$TLS_PORT${PLAIN}"
+        echo -e "Username      : ${GREEN}$WS_USER${PLAIN}"
+        echo -e "Password      : ${GREEN}$WS_PASSWORD${PLAIN}"
+    fi
     echo -e "${GREEN}════════════════════════════════════════════════════════════${PLAIN}"
     
     # Tekan Enter untuk melanjutkan
@@ -336,6 +430,17 @@ restart_websocket() {
     systemctl restart websockify > /dev/null 2>&1
     systemctl enable websockify > /dev/null 2>&1
     success "Service WebSocket berhasil direstart dan diaktifkan"
+    
+    # Tekan Enter untuk melanjutkan
+    read -n 1 -s -r -p "Tekan sembarang tombol untuk melanjutkan..."
+}
+
+# Tambahkan fungsi untuk restart TLS SSH
+restart_tls_ssh() {
+    show_progress "Merestart service TLS SSH"
+    systemctl restart stunnel4 > /dev/null 2>&1
+    systemctl enable stunnel4 > /dev/null 2>&1
+    success "Service TLS SSH berhasil direstart dan diaktifkan"
     
     # Tekan Enter untuk melanjutkan
     read -n 1 -s -r -p "Tekan sembarang tombol untuk melanjutkan..."
@@ -373,8 +478,15 @@ while true; do
                     2) delete_user ;;
                     3) show_users ;;
                     4) restart_ssh ;;
-                    5) break ;;
-                    *) echo -e "${RED}Silakan masukkan opsi yang valid [1-5]${PLAIN}"
+                    5) # Instal atau restart TLS SSH
+                       if [ -f /etc/stunnel/stunnel.conf ]; then
+                           restart_tls_ssh
+                       else
+                           install_tls_ssh
+                       fi
+                       ;;
+                    6) break ;;
+                    *) echo -e "${RED}Silakan masukkan opsi yang valid [1-6]${PLAIN}"
                        sleep 2 ;;
                 esac
             done
